@@ -10,6 +10,7 @@ const PUBLIC_FILES = new Map([
   ["/index.html", "index.html"],
   ["/app.js", "app.js"],
   ["/styles.css", "styles.css"],
+  ["/NotoSansTC-VF.ttf", "NotoSansTC-VF.ttf"],
 ]);
 
 function getPathname(reqUrl) {
@@ -101,7 +102,7 @@ function createTransport() {
 
 async function handleSendContract(req, res) {
   const body = await parseJsonBody(req);
-  const required = ["customerName", "phone", "deliveryDate", "email", "pdfBase64", "fileName"];
+  const required = ["customerName", "phone", "pdfBase64", "fileName"];
   const missing = required.filter((key) => !body[key]);
   if (missing.length > 0) {
     sendJson(res, 400, { ok: false, error: `Missing fields: ${missing.join(", ")}` });
@@ -116,7 +117,6 @@ async function handleSendContract(req, res) {
   await transport.sendMail({
     from: `御線上理財平臺 <${from}>`,
     to: recipient,
-    replyTo: body.email,
     subject: `訂車合約與訂金收據 - ${body.customerName}`,
     text: [
       "您好，",
@@ -124,7 +124,6 @@ async function handleSendContract(req, res) {
       "附件為訂車合約與訂金收據 PDF。",
       `訂購人：${body.customerName}`,
       `聯絡電話：${body.phone}`,
-      `預定交車日期：${body.deliveryDate}`,
       `訂金：NT$ 5,000`,
       "",
       "如需更正資料，請直接回覆此信。",

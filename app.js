@@ -24,13 +24,48 @@ const company = {
 const depositAmount = 5000;
 const previewCtx = previewCanvas.getContext("2d");
 const signatureCtx = signatureCanvas.getContext("2d");
+
 let drawing = false;
 let hasSignature = false;
 let signatureDataUrl = null;
 let pdfPreviewUrl = null;
+let pdfFontBase64 = null;
+let pdfFontLoadingPromise = null;
 
 function getJsPDF() {
   return window.jspdf?.jsPDF;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+
+  return btoa(binary);
+}
+
+async function loadPdfFont() {
+  if (pdfFontBase64) return pdfFontBase64;
+
+  if (!pdfFontLoadingPromise) {
+    pdfFontLoadingPromise = fetch("./NotoSansTC-VF.ttf")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("中文字型載入失敗");
+        }
+        return response.arrayBuffer();
+      })
+      .then((buffer) => {
+        pdfFontBase64 = arrayBufferToBase64(buffer);
+        return pdfFontBase64;
+      });
+  }
+
+  return pdfFontLoadingPromise;
 }
 
 function pad(num) {
@@ -100,6 +135,7 @@ function openSignatureModal() {
   signatureModal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
   syncSignatureCanvas();
+
   if (signatureDataUrl) {
     drawDataUrlOnCanvas(signatureCanvas, signatureCtx, signatureDataUrl);
   }
@@ -133,15 +169,188 @@ function clearModalOnly() {
   clearCanvas(previewCtx, previewCanvas);
 }
 
-function openPdfPreview() {
+async function ensurePdfFont(doc) {
+  const fontBase64 = await loadPdfFont();
+  doc.addFileToVFS("NotoSansTC-VF.ttf", fontBase64);
+  doc.addFont("NotoSansTC-VF.ttf", "NotoSansTC", "normal");
+  doc.setFont("NotoSansTC", "normal");
+}
+
+function readFormData() {
+  const data = new FormData(form);
+  return {
+    customerName: (data.get("customerName") || "").toString().trim(),
+    phone: (data.get("phone") || "").toString().trim(),
+    idNumber: (data.get("idNumber") || "").toString().trim(),
+    paymentMethod: (data.get("paymentMethod") || "").toString().trim(),
+    accountNumber: (data.get("accountNumber") || "").toString().trim(),
+    bankName: (data.get("bankName") || "").toString().trim(),
+    accountName: (data.get("accountName") || "").toString().trim(),
+    paymentDate: (data.get("paymentDate") || "").toString().trim(),
+    paymentNote: (data.get("paymentNote") || "").toString().trim(),
+    agreed: Boolean(data.get("agreeTerms")),
+  };
+}
+
+function updateSummary() {
   const data = readFormData();
-  if (!data.customerName || !data.phone || !data.deliveryDate || !data.email) {
-    showToast("請先至少填完姓名、電話、交車日期與 Email 才能預覽。");
+  summaryNote.textContent = `訂購人：${data.customerName || "尚未填寫"} ｜ 電話：${
+    data.phone || "尚未填寫"
+  } ｜ 付款方式：${data.paymentMethod || "尚未填寫"}`;
+}
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add("is-visible");
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    toast.classList.remove("is-visible");
+  }, 2400);
+}
+
+function drawText(doc, text, x, y, options = {}) {
+  const lines = doc.splitTextToSize(text, options.maxWidth || 170);
+  doc.text(lines, x, y);
+  return y + lines.length * (options.lineHeight || 6) + (options.gap || 0);
+}
+
+function addSectionTitle(doc, title, x, y) {
+  doc.setFont("NotoSansTC", "normal");
+  doc.setFontSize(12);
+  doc.text(title, x, y);
+  doc.setDrawColor(180);
+  doc.line(x, y + 2, 196, y + 2);
+  return y + 8;
+}
+
+function drawKeyValue(doc, label, value, x, y, width = 88) {
+  doc.setFont("NotoSansTC", "normal");
+  doc.setFontSize(10);
+  doc.text(label, x, y);
+  const lines = doc.splitTextToSize(value || "未填寫", width);
+  doc.text(lines, x + 30, y);
+  return y + lines.length * 5.5 + 2;
+}
+
+async function buildPdf(receiptId = receiptNumber()) {
+  const jsPDF = getJsPDF();
+  if (!jsPDF) {
+    throw new Error("PDF 元件尚未載入");
+  }
+
+  const data = readFormData();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const marginX = 14;
+  let y = 16;
+
+  await ensurePdfFont(doc);
+  doc.setTextColor(15, 23, 42);
+  doc.setFont("NotoSansTC", "normal");
+  doc.setFontSize(18);
+  doc.text("訂車合約與訂金收據", marginX, y);
+  y += 7;
+
+  doc.setFontSize(10);
+  y = drawText(doc, `${company.name} ｜ ${company.address}`, marginX, y, {
+    maxWidth: 180,
+    gap: 2,
+  });
+
+  doc.setDrawColor(245, 158, 11);
+  doc.setLineWidth(0.6);
+  doc.line(marginX, y, 196, y);
+  y += 8;
+
+  y = addSectionTitle(doc, "基本資料", marginX, y);
+  y = drawKeyValue(doc, "訂購人", data.customerName, marginX, y);
+  y = drawKeyValue(doc, "聯絡電話", data.phone, marginX, y);
+  y = drawKeyValue(doc, "身分證 / 統編", data.idNumber || "未填寫", marginX, y);
+  y += 2;
+
+  y = addSectionTitle(doc, "付款資訊", marginX, y);
+  y = drawKeyValue(doc, "付款方式", data.paymentMethod, marginX, y);
+  y = drawKeyValue(doc, "銀行名稱", data.bankName || "未填寫", marginX, y);
+  y = drawKeyValue(doc, "戶名", data.accountName || "未填寫", marginX, y);
+  y = drawKeyValue(doc, "帳號 / 後五碼", data.accountNumber || "未填寫", marginX, y);
+  y = drawKeyValue(doc, "付款日期", data.paymentDate || todayString(), marginX, y);
+  y = drawKeyValue(doc, "付款備註", data.paymentNote || "訂車訂金", marginX, y);
+  y += 2;
+
+  y = addSectionTitle(doc, "訂金收據", marginX, y);
+  y = drawKeyValue(doc, "收據編號", receiptId, marginX, y);
+  y = drawKeyValue(doc, "收據日期", todayString(), marginX, y);
+  y = drawKeyValue(doc, "收款單位", company.name, marginX, y);
+  y = drawKeyValue(doc, "收款金額", `NT$ ${depositAmount.toLocaleString("zh-TW")}`, marginX, y);
+  y = drawKeyValue(doc, "用途", "訂車保留訂金", marginX, y);
+  y += 2;
+
+  y = addSectionTitle(doc, "合約條例", marginX, y);
+  const terms = [
+    "訂購人同意以新台幣 5,000 元作為本次訂車訂金。",
+    "訂金支付後，賣方依訂購需求安排配車，實際車輛資訊以配車後確認資料為準。",
+    "如訂購人無故取消訂車，訂金原則上不予退還。",
+    "如賣方無法依約完成配車或交付車輛，訂購人得請求全額退還訂金。",
+    "交車日期如因不可抗力、原廠配車、法規變動或不可歸責於雙方之事由延後，雙方得協議調整。",
+    "車輛規格、顏色、配備與交車內容，於配車完成後另行確認並以雙方確認資料為準。",
+    "訂購人應提供正確聯絡資料，以便通知交車及相關文件事宜。",
+    "本頁為簡易電子簽署範本，正式法律效力建議再由雙方確認或由律師審閱。",
+  ];
+
+  doc.setFont("NotoSansTC", "normal");
+  doc.setFontSize(10);
+  terms.forEach((term, index) => {
+    const lines = doc.splitTextToSize(`${index + 1}. ${term}`, 174);
+    if (y + lines.length * 5.5 > 258) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.text(lines, marginX, y);
+    y += lines.length * 5.5 + 1.5;
+  });
+
+  if (y + 50 > 270) {
+    doc.addPage();
+    y = 18;
+  }
+
+  y += 3;
+  y = addSectionTitle(doc, "電子簽名", marginX, y);
+  if (signatureDataUrl) {
+    doc.addImage(signatureDataUrl, "PNG", marginX, y, 90, 36);
+    y += 40;
+  } else {
+    doc.setFont("NotoSansTC", "normal");
+    doc.setFontSize(10);
+    doc.text("尚未簽名", marginX, y);
+    y += 10;
+  }
+
+  doc.setFont("NotoSansTC", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(`簽署日期：${todayString()}`, marginX, 283);
+
+  return {
+    doc,
+    receipt: receiptId,
+    fileName: `訂車合約_${data.customerName || "未命名"}_${todayString()}.pdf`,
+  };
+}
+
+async function createPdfPackage(receiptId) {
+  const { doc, fileName } = await buildPdf(receiptId);
+  const pdfBase64 = doc.output("datauristring").split(",")[1];
+  return { fileName, pdfBase64 };
+}
+
+async function openPdfPreview() {
+  const data = readFormData();
+  if (!data.customerName || !data.phone) {
+    showToast("請先至少填完姓名與電話才能預覽。");
     return;
   }
 
-  const receiptId = receiptNumber();
-  const pdf = createPdfPackage(receiptId);
+  const pdf = await createPdfPackage(receiptNumber());
   const pdfBlob = base64ToBlob(pdf.pdfBase64, "application/pdf");
   if (pdfPreviewUrl) {
     URL.revokeObjectURL(pdfPreviewUrl);
@@ -200,218 +409,37 @@ function stopDrawing() {
   hasSignature = true;
 }
 
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add("is-visible");
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => {
-    toast.classList.remove("is-visible");
-  }, 2400);
-}
-
-function readFormData() {
-  const data = new FormData(form);
-  return {
-    customerName: (data.get("customerName") || "").toString().trim(),
-    phone: (data.get("phone") || "").toString().trim(),
-    idNumber: (data.get("idNumber") || "").toString().trim(),
-    deliveryDate: (data.get("deliveryDate") || "").toString().trim(),
-    email: (data.get("email") || "").toString().trim(),
-    paymentMethod: (data.get("paymentMethod") || "").toString().trim(),
-    accountNumber: (data.get("accountNumber") || "").toString().trim(),
-    bankName: (data.get("bankName") || "").toString().trim(),
-    accountName: (data.get("accountName") || "").toString().trim(),
-    paymentDate: (data.get("paymentDate") || "").toString().trim(),
-    paymentNote: (data.get("paymentNote") || "").toString().trim(),
-    agreed: Boolean(data.get("agreeTerms")),
-  };
-}
-
-function updateSummary() {
-  const data = readFormData();
-  summaryNote.textContent = `訂購人：${data.customerName || "尚未填寫"} ｜ 交車：${
-    data.deliveryDate || "尚未填寫"
-  } ｜ 收件：${data.email || "尚未填寫"}`;
-}
-
-function drawText(doc, text, x, y, options = {}) {
-  const lines = doc.splitTextToSize(text, options.maxWidth || 170);
-  doc.text(lines, x, y);
-  return y + lines.length * (options.lineHeight || 6) + (options.gap || 0);
-}
-
-function addSectionTitle(doc, title, x, y) {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text(title, x, y);
-  doc.setDrawColor(180);
-  doc.line(x, y + 2, 196, y + 2);
-  return y + 8;
-}
-
-function drawKeyValue(doc, label, value, x, y, width = 88) {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text(label, x, y);
-  doc.setFont("helvetica", "normal");
-  const lines = doc.splitTextToSize(value || "未填寫", width);
-  doc.text(lines, x + 28, y);
-  return y + lines.length * 5.5 + 2;
-}
-
-function buildPdf(receiptId = receiptNumber()) {
-  const jsPDF = getJsPDF();
-  if (!jsPDF) {
-    throw new Error("PDF 元件尚未載入");
-  }
-
-  const data = readFormData();
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const marginX = 14;
-  let y = 16;
-
-  doc.setTextColor(15, 23, 42);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text("訂車合約與訂金收據", marginX, y);
-  y += 7;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  y = drawText(doc, `${company.name} ｜ ${company.address}`, marginX, y, { maxWidth: 180, gap: 2 });
-
-  doc.setDrawColor(245, 158, 11);
-  doc.setLineWidth(0.6);
-  doc.line(marginX, y, 196, y);
-  y += 8;
-
-  y = addSectionTitle(doc, "基本資料", marginX, y);
-  y = drawKeyValue(doc, "訂購人", data.customerName, marginX, y);
-  y = drawKeyValue(doc, "聯絡電話", data.phone, marginX, y);
-  y = drawKeyValue(doc, "身分證 / 統編", data.idNumber || "未填寫", marginX, y);
-  y = drawKeyValue(doc, "預定交車", data.deliveryDate, marginX, y);
-  y = drawKeyValue(doc, "收件 Email", data.email, marginX, y);
-  y += 2;
-
-  y = addSectionTitle(doc, "付款資訊", marginX, y);
-  y = drawKeyValue(doc, "付款方式", data.paymentMethod, marginX, y);
-  y = drawKeyValue(doc, "銀行名稱", data.bankName || "未填寫", marginX, y);
-  y = drawKeyValue(doc, "戶名", data.accountName || "未填寫", marginX, y);
-  y = drawKeyValue(doc, "帳號 / 後五碼", data.accountNumber || "未填寫", marginX, y);
-  y = drawKeyValue(doc, "付款日期", data.paymentDate || todayString(), marginX, y);
-  y = drawKeyValue(doc, "付款備註", data.paymentNote || "訂車訂金", marginX, y);
-  y += 2;
-
-  y = addSectionTitle(doc, "訂金收據", marginX, y);
-  y = drawKeyValue(doc, "收據編號", receiptId, marginX, y);
-  y = drawKeyValue(doc, "收據日期", todayString(), marginX, y);
-  y = drawKeyValue(doc, "收款單位", company.name, marginX, y);
-  y = drawKeyValue(doc, "收款金額", `NT$ ${depositAmount.toLocaleString("zh-TW")}`, marginX, y);
-  y = drawKeyValue(doc, "用途", "訂車保留訂金", marginX, y);
-  y += 2;
-
-  y = addSectionTitle(doc, "合約條例", marginX, y);
-  const terms = [
-    "訂購人同意以新台幣 5,000 元作為本次訂車訂金。",
-    "訂金支付後，賣方依訂購需求安排配車，實際車輛資訊以配車後確認資料為準。",
-    "如訂購人無故取消訂車，訂金原則上不予退還。",
-    "如賣方無法依約完成配車或交付車輛，訂購人得請求全額退還訂金。",
-    "交車日期如因不可抗力、原廠配車、法規變動或不可歸責於雙方之事由延後，雙方得協議調整。",
-    "車輛規格、顏色、配備與交車內容，於配車完成後另行確認並以雙方確認資料為準。",
-    "訂購人應提供正確聯絡資料，以便通知交車及相關文件事宜。",
-    "本頁為簡易電子簽署範本，正式法律效力建議再由雙方確認或由律師審閱。",
-  ];
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  terms.forEach((term, index) => {
-    const lines = doc.splitTextToSize(`${index + 1}. ${term}`, 174);
-    if (y + lines.length * 5.5 > 258) {
-      doc.addPage();
-      y = 18;
-    }
-    doc.text(lines, marginX, y);
-    y += lines.length * 5.5 + 1.5;
-  });
-
-  if (y + 50 > 270) {
-    doc.addPage();
-    y = 18;
-  }
-
-  y += 3;
-  y = addSectionTitle(doc, "電子簽名", marginX, y);
-  if (signatureDataUrl) {
-    doc.addImage(signatureDataUrl, "PNG", marginX, y, 90, 36);
-    y += 40;
-  } else {
-    doc.setFont("helvetica", "italic");
-    doc.text("尚未簽名", marginX, y);
-    y += 10;
-  }
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.text(`簽署日期：${todayString()}`, marginX, 283);
-
-  return { doc, receipt: receiptId, fileName: `訂車合約_${data.customerName || "未命名"}_${todayString()}.pdf` };
-}
-
-function downloadPdf(receiptId) {
-  const { doc, fileName } = buildPdf(receiptId);
-  doc.save(fileName);
-  return { fileName, receiptId: receiptId || "UNKNOWN" };
-}
-
-function createPdfPackage(receiptId) {
-  const { doc, fileName } = buildPdf(receiptId);
-  const pdfBase64 = doc.output("datauristring").split(",")[1];
-  return { fileName, pdfBase64 };
-}
-
-function openGmailDraft(data, receiptId) {
-  const subject = `訂車合約與訂金收據 - ${data.customerName || "未命名"}`;
-  const body = [
-    `您好，`,
-    "",
-    `以下為訂車合約與訂金收據資訊：`,
-    `訂購人：${data.customerName || "未填寫"}`,
-    `訂金：NT$ ${depositAmount.toLocaleString("zh-TW")}`,
-    `收據編號：${receiptId || "未填寫"}`,
-    "",
-    `PDF 已另外下載，請將附件加入此封 Gmail 草稿後送出。`,
-  ].join("\n");
-  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-    company.email,
-  )}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.open(gmailUrl, "_blank", "noopener,noreferrer");
-}
-
 openSignaturePadBtn.addEventListener("click", openSignatureModal);
-previewCanvas.addEventListener("click", openSignatureModal);
+previewPdfBtn.addEventListener("click", () => {
+  openPdfPreview().catch((error) => {
+    console.error(error);
+    showToast(error.message || "PDF 預覽失敗");
+  });
+});
 signatureCanvas.addEventListener("pointerdown", startDrawing);
 signatureCanvas.addEventListener("pointermove", draw);
 signatureCanvas.addEventListener("pointerup", stopDrawing);
 signatureCanvas.addEventListener("pointerleave", stopDrawing);
+signatureCanvas.addEventListener("pointercancel", stopDrawing);
 
 closeSignaturePadBtn.addEventListener("click", closeSignatureModal);
 cancelModalSignatureBtn.addEventListener("click", closeSignatureModal);
 clearModalSignatureBtn.addEventListener("click", clearModalOnly);
 saveModalSignatureBtn.addEventListener("click", commitSignature);
 clearSignatureBtn.addEventListener("click", clearAllSignature);
-previewPdfBtn.addEventListener("click", openPdfPreview);
-closePdfPreviewBtn.addEventListener("click", closePdfPreview);
-pdfModal.addEventListener("click", (event) => {
-  if (event.target === pdfModal) {
-    closePdfPreview();
-  }
-});
 signatureModal.addEventListener("click", (event) => {
   if (event.target === signatureModal) {
     closeSignatureModal();
   }
 });
+
+pdfModal.addEventListener("click", (event) => {
+  if (event.target === pdfModal) {
+    closePdfPreview();
+  }
+});
+
+closePdfPreviewBtn.addEventListener("click", closePdfPreview);
 
 window.addEventListener("resize", () => {
   syncPreview();
@@ -434,8 +462,8 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = readFormData();
 
-  if (!data.customerName || !data.phone || !data.deliveryDate || !data.email) {
-    showToast("請先填寫姓名、電話、交車日期與收件 Email。");
+  if (!data.customerName || !data.phone) {
+    showToast("請先填寫姓名與電話。");
     return;
   }
 
@@ -450,19 +478,20 @@ form.addEventListener("submit", async (event) => {
   }
 
   const receiptId = receiptNumber();
-  const pdf = createPdfPackage(receiptId);
-  const payload = {
-    ...data,
-    deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
-    receiptNumber: receiptId,
-    company,
-    fileName: pdf.fileName,
-    signature: signatureDataUrl,
-  };
-
-  localStorage.setItem("carReservationContract", JSON.stringify(payload));
 
   try {
+    const pdf = await createPdfPackage(receiptId);
+    const payload = {
+      ...data,
+      deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
+      receiptNumber: receiptId,
+      company,
+      fileName: pdf.fileName,
+      signature: signatureDataUrl,
+    };
+
+    localStorage.setItem("carReservationContract", JSON.stringify(payload));
+
     const response = await fetch("/api/send-contract", {
       method: "POST",
       headers: {
@@ -492,12 +521,13 @@ form.addEventListener("submit", async (event) => {
     }
   } catch (error) {
     console.error(error);
-    showToast(error.message || "寄信失敗，請稍後再試。");
+    showToast(error.message || "寄信失敗，請稍後再試");
   }
 });
 
 syncPreview();
+loadPdfFont().catch((error) => console.warn(error));
+form.querySelector('select[name="paymentMethod"]').value = "銀行轉帳";
 form.querySelector('input[name="paymentDate"]').value = todayString();
 form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
-form.querySelector('select[name="paymentMethod"]').value = "銀行轉帳";
 updateSummary();
