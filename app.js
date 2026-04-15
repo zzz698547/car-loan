@@ -16,7 +16,7 @@ const toast = document.getElementById("toast");
 const summaryNote = document.getElementById("summaryNote");
 
 const company = {
-  name: "御線上理財平臺",
+  name: "將御線上理財平臺",
   address: "台中市北區興進路218巷5號",
   email: "jianglaifinance@gmail.com",
 };
@@ -527,7 +527,6 @@ form.addEventListener("submit", async (event) => {
 
 syncPreview();
 loadPdfFont().catch((error) => console.warn(error));
-form.querySelector('select[name="paymentMethod"]').value = "銀行轉帳";
-form.querySelector('input[name="paymentDate"]').value = todayString();
-form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
-updateSummary();
+  form.querySelector('input[name="paymentDate"]').value = todayString();
+  form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
+  updateSummary();

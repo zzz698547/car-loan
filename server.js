@@ -115,7 +115,7 @@ async function handleSendContract(req, res) {
   const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
 
   await transport.sendMail({
-    from: `御線上理財平臺 <${from}>`,
+    from: `將御線上理財平臺 <${from}>`,
     to: recipient,
     subject: `訂車合約與訂金收據 - ${body.customerName}`,
     text: [
