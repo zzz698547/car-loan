@@ -187,6 +187,7 @@ function readFormData() {
   return {
     customerName: (data.get("customerName") || "").toString().trim(),
     phone: (data.get("phone") || "").toString().trim(),
+    birthDate: (data.get("birthDate") || "").toString().trim(),
     idNumber: (data.get("idNumber") || "").toString().trim(),
     paymentMethod: (data.get("paymentMethod") || "").toString().trim(),
     accountNumber: (data.get("accountNumber") || "").toString().trim(),
@@ -270,6 +271,7 @@ async function buildPdf(receiptId = receiptNumber()) {
   y = addSectionTitle(doc, "基本資料", marginX, y);
   y = drawKeyValue(doc, "訂購人", data.customerName, marginX, y);
   y = drawKeyValue(doc, "聯絡電話", data.phone, marginX, y);
+  y = drawKeyValue(doc, "出生年月日", data.birthDate || "未填寫", marginX, y);
   y = drawKeyValue(doc, "身分證 / 統編", data.idNumber || "未填寫", marginX, y);
   y += 2;
 
