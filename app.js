@@ -27,26 +27,10 @@ const signatureCtx = signatureCanvas.getContext("2d");
 let drawing = false;
 let hasSignature = false;
 let signatureDataUrl = null;
-let logoDataUrl = null;
 let pdfPreviewUrl = null;
 
 function getJsPDF() {
   return window.jspdf?.jsPDF;
-}
-
-async function loadLogo() {
-  try {
-    const response = await fetch("./jiangyu-transparent.png");
-    const blob = await response.blob();
-    logoDataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.warn("Logo preload failed:", error);
-  }
 }
 
 function pad(num) {
@@ -287,20 +271,14 @@ function buildPdf(receiptId = receiptNumber()) {
   let y = 16;
 
   doc.setTextColor(15, 23, 42);
-  if (logoDataUrl) {
-    doc.addImage(logoDataUrl, "PNG", marginX, 8, 28, 24);
-  }
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text("訂車合約與訂金收據", logoDataUrl ? 46 : marginX, y);
+  doc.text("訂車合約與訂金收據", marginX, y);
   y += 7;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  y = drawText(doc, `${company.name} ｜ ${company.address}`, logoDataUrl ? 46 : marginX, y, {
-    maxWidth: logoDataUrl ? 140 : 180,
-    gap: 2,
-  });
+  y = drawText(doc, `${company.name} ｜ ${company.address}`, marginX, y, { maxWidth: 180, gap: 2 });
 
   doc.setDrawColor(245, 158, 11);
   doc.setLineWidth(0.6);
@@ -519,7 +497,6 @@ form.addEventListener("submit", async (event) => {
 });
 
 syncPreview();
-loadLogo();
 form.querySelector('input[name="paymentDate"]').value = todayString();
 form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
 form.querySelector('select[name="paymentMethod"]').value = "銀行轉帳";

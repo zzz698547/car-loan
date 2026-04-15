@@ -10,7 +10,6 @@ const PUBLIC_FILES = new Map([
   ["/index.html", "index.html"],
   ["/app.js", "app.js"],
   ["/styles.css", "styles.css"],
-  ["/jiangyu-transparent.png", "jiangyu-transparent.png"],
 ]);
 
 function getPathname(reqUrl) {
