@@ -156,8 +156,9 @@ select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
+  background: #ffffff;
+  color: #0f172a;
+  color-scheme: light;
   padding: 14px 14px;
   font: inherit;
   outline: none;
@@ -175,7 +176,17 @@ input:focus {
 
 select:focus {
   border-color: rgba(56, 189, 248, 0.8);
-  background: rgba(255, 255, 255, 0.1);
+  background: #ffffff;
+}
+
+select option {
+  color: #0f172a;
+  background: #ffffff;
+  color-scheme: light;
+}
+
+select option:disabled {
+  color: #64748b;
 }
 
 .money-box {
@@ -472,6 +483,62 @@ select:focus {
   background: #fff;
 }
 
+.success-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: none;
+  place-items: center;
+  background: radial-gradient(circle at top, rgba(56, 189, 248, 0.18), rgba(2, 6, 23, 0.94));
+  backdrop-filter: blur(12px);
+  padding: 20px;
+}
+
+.success-modal.is-open {
+  display: grid;
+}
+
+.success-modal__sheet {
+  width: min(100%, 460px);
+  padding: 28px 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.9));
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.success-modal__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.18);
+  color: #86efac;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+
+.success-modal__sheet h2 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: -0.03em;
+}
+
+.success-modal__sheet p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.success-modal__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
 .summary-list {
   display: grid;
   gap: 12px;
@@ -592,6 +659,11 @@ select:focus {
 
   .pdf-modal__frame {
     min-height: 0;
+  }
+
+  .success-modal__sheet {
+    width: 100%;
+    padding: 22px 18px;
   }
 
   .signature-pad__label {

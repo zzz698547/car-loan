@@ -12,6 +12,8 @@ const signatureModal = document.getElementById("signatureModal");
 const pdfModal = document.getElementById("pdfModal");
 const pdfPreviewFrame = document.getElementById("pdfPreviewFrame");
 const closePdfPreviewBtn = document.getElementById("closePdfPreview");
+const successModal = document.getElementById("successModal");
+const closeSuccessModalBtn = document.getElementById("closeSuccessModal");
 const toast = document.getElementById("toast");
 const summaryNote = document.getElementById("summaryNote");
 
@@ -369,6 +371,18 @@ function closePdfPreview() {
   pdfPreviewFrame.src = "about:blank";
 }
 
+function openSuccessModal() {
+  successModal.classList.add("is-open");
+  successModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeSuccessModal() {
+  successModal.classList.remove("is-open");
+  successModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
 function base64ToBlob(base64, contentType) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -440,6 +454,7 @@ pdfModal.addEventListener("click", (event) => {
 });
 
 closePdfPreviewBtn.addEventListener("click", closePdfPreview);
+closeSuccessModalBtn.addEventListener("click", closeSuccessModal);
 
 window.addEventListener("resize", () => {
   syncPreview();
@@ -453,6 +468,8 @@ window.addEventListener("keydown", (event) => {
     closeSignatureModal();
   } else if (event.key === "Escape" && pdfModal.classList.contains("is-open")) {
     closePdfPreview();
+  } else if (event.key === "Escape" && successModal.classList.contains("is-open")) {
+    closeSuccessModal();
   }
 });
 
@@ -514,7 +531,10 @@ form.addEventListener("submit", async (event) => {
       throw new Error(result.error || "寄信失敗");
     }
 
-    alert("簽約成功");
+    if (pdfModal.classList.contains("is-open")) {
+      closePdfPreview();
+    }
+    openSuccessModal();
     if (pdfPreviewUrl) {
       URL.revokeObjectURL(pdfPreviewUrl);
       pdfPreviewUrl = null;
@@ -527,6 +547,6 @@ form.addEventListener("submit", async (event) => {
 
 syncPreview();
 loadPdfFont().catch((error) => console.warn(error));
-  form.querySelector('input[name="paymentDate"]').value = todayString();
-  form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
-  updateSummary();
+form.querySelector('input[name="paymentDate"]').value = todayString();
+form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
+updateSummary();

@@ -196,6 +196,16 @@
         <iframe id="pdfPreviewFrame" title="PDF 預覽" class="pdf-modal__frame"></iframe>
       </div>
     </div>
+    <div class="success-modal" id="successModal" aria-hidden="true">
+      <div class="success-modal__sheet" role="dialog" aria-modal="true" aria-label="簽約成功">
+        <div class="success-modal__badge">完成</div>
+        <h2>簽約成功</h2>
+        <p>您的訂車合約已成功送出，系統已將 PDF 與簽約資料寄出。</p>
+        <div class="success-modal__actions">
+          <button type="button" class="primary-btn" id="closeSuccessModal">確定</button>
+        </div>
+      </div>
+    </div>
     <script src="./app.js" defer></script>
   </body>
 </html>
