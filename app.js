@@ -680,32 +680,43 @@ form.addEventListener("submit", async (event) => {
     const pdf = cachedPdf && cachedPdf.receiptId ? cachedPdf : await createPdfPackage(receiptId);
     const finalReceiptId = pdf.receiptId || receiptId;
     setLoadingStep("資料寄送中，請稍候...");
-    const payload = {
-      ...data,
-      deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
-      receiptNumber: finalReceiptId,
-      company,
-      fileName: pdf.fileName,
-      signature: signatureDataUrl,
-    };
+    const requestController = new AbortController();
+    const requestTimeout = window.setTimeout(() => {
+      requestController.abort();
+    }, 20000);
 
-    localStorage.setItem("carReservationContract", JSON.stringify(payload));
-
-    const response = await fetch("/api/send-contract", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    let response;
+    try {
+      const payload = {
         ...data,
-        fileName: pdf.fileName,
-        receiptNumber: finalReceiptId,
-        pdfBase64: pdf.pdfBase64,
-        signature: signatureDataUrl,
-        company,
         deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
-      }),
-    });
+        receiptNumber: finalReceiptId,
+        company,
+        fileName: pdf.fileName,
+        signature: signatureDataUrl,
+      };
+
+      localStorage.setItem("carReservationContract", JSON.stringify(payload));
+
+      response = await fetch("/api/send-contract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: requestController.signal,
+        body: JSON.stringify({
+          ...data,
+          fileName: pdf.fileName,
+          receiptNumber: finalReceiptId,
+          pdfBase64: pdf.pdfBase64,
+          signature: signatureDataUrl,
+          company,
+          deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
+        }),
+      });
+    } finally {
+      window.clearTimeout(requestTimeout);
+    }
 
     const result = await response.json().catch(() => ({}));
 
@@ -726,7 +737,11 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     closeLoadingModal();
     console.error(error);
-    showToast(error.message || "寄信失敗，請稍後再試");
+    if (error?.name === "AbortError") {
+      showToast("送出逾時，請再試一次");
+    } else {
+      showToast(error.message || "寄信失敗，請稍後再試");
+    }
   } finally {
     setSubmittingState(false);
   }

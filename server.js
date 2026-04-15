@@ -96,6 +96,9 @@ function createTransport() {
     host,
     port,
     secure,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000,
     auth: { user, pass },
   });
 }
@@ -122,6 +125,8 @@ async function sendTelegramContract(body, pdfBuffer) {
   const chatId = requireEnv("TELEGRAM_CHAT_ID");
   const caption = buildContractText(body);
   const url = `https://api.telegram.org/bot${token}/sendDocument`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
   const form = new FormData();
   form.append("chat_id", chatId);
@@ -129,15 +134,34 @@ async function sendTelegramContract(body, pdfBuffer) {
   form.append("disable_notification", "false");
   form.append("document", new Blob([pdfBuffer], { type: "application/pdf" }), body.fileName);
 
-  const response = await fetch(url, {
-    method: "POST",
-    body: form,
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Telegram 寄送失敗${text ? `：${text}` : ""}`);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Telegram 寄送失敗${text ? `：${text}` : ""}`);
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Telegram 寄送逾時");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
+}
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(label)), ms);
+    }),
+  ]);
 }
 
 async function handleSendContract(req, res) {
@@ -156,20 +180,24 @@ async function handleSendContract(req, res) {
   const mailText = buildContractText(body);
 
   const [mailResult, telegramResult] = await Promise.allSettled([
-    transport.sendMail({
-      from: `將御線上理財平臺 <${from}>`,
-      to: recipient,
-      subject: `訂車合約與訂金收據 - ${body.customerName}`,
-      text: mailText,
-      attachments: [
-        {
-          filename: body.fileName,
-          content: pdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
-    }),
-    sendTelegramContract(body, pdfBuffer),
+    withTimeout(
+      transport.sendMail({
+        from: `將御線上理財平臺 <${from}>`,
+        to: recipient,
+        subject: `訂車合約與訂金收據 - ${body.customerName}`,
+        text: mailText,
+        attachments: [
+          {
+            filename: body.fileName,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      }),
+      15000,
+      "Gmail 寄送逾時",
+    ),
+    withTimeout(sendTelegramContract(body, pdfBuffer), 15000, "Telegram 寄送逾時"),
   ]);
 
   const failures = [];
