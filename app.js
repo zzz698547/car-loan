@@ -37,6 +37,11 @@ let pdfFontBase64 = null;
 let pdfFontLoadingPromise = null;
 let isSubmitting = false;
 let successCloseTimer = null;
+let pdfWarmupTimer = null;
+let pdfWarmupPromise = null;
+let pdfWarmupFingerprint = null;
+let cachedPdfFingerprint = null;
+let cachedPdfPackage = null;
 
 function getJsPDF() {
   return window.jspdf?.jsPDF;
@@ -158,6 +163,7 @@ function commitSignature() {
   signatureDataUrl = signatureCanvas.toDataURL("image/png");
   hasSignature = true;
   syncPreview();
+  schedulePdfWarmup();
   closeSignatureModal();
 }
 
@@ -166,6 +172,7 @@ function clearAllSignature() {
   hasSignature = false;
   clearCanvas(signatureCtx, signatureCanvas);
   clearCanvas(previewCtx, previewCanvas);
+  invalidatePdfCache();
 }
 
 function clearModalOnly() {
@@ -173,6 +180,7 @@ function clearModalOnly() {
   hasSignature = false;
   clearCanvas(signatureCtx, signatureCanvas);
   clearCanvas(previewCtx, previewCanvas);
+  invalidatePdfCache();
 }
 
 async function ensurePdfFont(doc) {
@@ -180,6 +188,68 @@ async function ensurePdfFont(doc) {
   doc.addFileToVFS("NotoSansTC-VF.ttf", fontBase64);
   doc.addFont("NotoSansTC-VF.ttf", "NotoSansTC", "normal");
   doc.setFont("NotoSansTC", "normal");
+}
+
+function getPdfFingerprint(data) {
+  return JSON.stringify({
+    customerName: data.customerName,
+    phone: data.phone,
+    birthDate: data.birthDate,
+    idNumber: data.idNumber,
+    paymentMethod: data.paymentMethod,
+    accountNumber: data.accountNumber,
+    bankName: data.bankName,
+    accountName: data.accountName,
+    paymentDate: data.paymentDate,
+    paymentNote: data.paymentNote,
+    agreed: data.agreed,
+    signature: signatureDataUrl || "",
+  });
+}
+
+function invalidatePdfCache() {
+  cachedPdfFingerprint = null;
+  cachedPdfPackage = null;
+  pdfWarmupPromise = null;
+  pdfWarmupFingerprint = null;
+  window.clearTimeout(pdfWarmupTimer);
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+async function createPrintableSignatureDataUrl(dataUrl) {
+  if (!dataUrl) return null;
+
+  try {
+    const img = await loadImageFromDataUrl(dataUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    const context = canvas.getContext("2d");
+    context.drawImage(img, 0, 0);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] > 0) {
+        pixels[i] = 17;
+        pixels[i + 1] = 24;
+        pixels[i + 2] = 39;
+      }
+    }
+    context.putImageData(imageData, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return dataUrl;
+  }
 }
 
 function readFormData() {
@@ -324,7 +394,8 @@ async function buildPdf(receiptId = receiptNumber()) {
   y += 3;
   y = addSectionTitle(doc, "電子簽名", marginX, y);
   if (signatureDataUrl) {
-    doc.addImage(signatureDataUrl, "PNG", marginX, y, 90, 36);
+    const printableSignature = await createPrintableSignatureDataUrl(signatureDataUrl);
+    doc.addImage(printableSignature, "PNG", marginX, y, 90, 36);
     y += 40;
   } else {
     doc.setFont("NotoSansTC", "normal");
@@ -351,6 +422,55 @@ async function createPdfPackage(receiptId) {
   return { fileName, pdfBase64 };
 }
 
+async function preparePdfPackage() {
+  const data = readFormData();
+  const fingerprint = getPdfFingerprint(data);
+
+  if (cachedPdfPackage && cachedPdfFingerprint === fingerprint) {
+    return cachedPdfPackage;
+  }
+
+  if (pdfWarmupPromise && cachedPdfFingerprint === fingerprint) {
+    return pdfWarmupPromise;
+  }
+
+  const receiptId = receiptNumber();
+  pdfWarmupFingerprint = fingerprint;
+  pdfWarmupPromise = createPdfPackage(receiptId).then((pdf) => {
+    if (getPdfFingerprint(readFormData()) !== fingerprint) {
+      return null;
+    }
+    cachedPdfFingerprint = fingerprint;
+    cachedPdfPackage = { ...pdf, receiptId };
+    pdfWarmupPromise = null;
+    pdfWarmupFingerprint = null;
+    return cachedPdfPackage;
+  });
+
+  return pdfWarmupPromise;
+}
+
+function schedulePdfWarmup() {
+  window.clearTimeout(pdfWarmupTimer);
+
+  const data = readFormData();
+  const fingerprint = getPdfFingerprint(data);
+  if (!data.customerName || !data.phone || !data.agreed || !signatureDataUrl) {
+    invalidatePdfCache();
+    return;
+  }
+
+  if (pdfWarmupPromise && pdfWarmupFingerprint === fingerprint) {
+    return;
+  }
+
+  pdfWarmupTimer = window.setTimeout(() => {
+    preparePdfPackage().catch((error) => {
+      console.warn(error);
+    });
+  }, 350);
+}
+
 async function openPdfPreview() {
   const data = readFormData();
   if (!data.customerName || !data.phone) {
@@ -358,7 +478,8 @@ async function openPdfPreview() {
     return;
   }
 
-  const pdf = await createPdfPackage(receiptNumber());
+  const preparedPdf = await preparePdfPackage();
+  const pdf = preparedPdf && preparedPdf.fileName ? preparedPdf : await createPdfPackage(receiptNumber());
   const pdfBlob = base64ToBlob(pdf.pdfBase64, "application/pdf");
   if (pdfPreviewUrl) {
     URL.revokeObjectURL(pdfPreviewUrl);
@@ -520,7 +641,10 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-form.addEventListener("input", updateSummary);
+form.addEventListener("input", () => {
+  updateSummary();
+  schedulePdfWarmup();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -552,12 +676,14 @@ form.addEventListener("submit", async (event) => {
 
   try {
     setLoadingStep("PDF 產生中，請稍候...");
-    const pdf = await createPdfPackage(receiptId);
+    const cachedPdf = await preparePdfPackage();
+    const pdf = cachedPdf && cachedPdf.receiptId ? cachedPdf : await createPdfPackage(receiptId);
+    const finalReceiptId = pdf.receiptId || receiptId;
     setLoadingStep("資料寄送中，請稍候...");
     const payload = {
       ...data,
       deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
-      receiptNumber: receiptId,
+      receiptNumber: finalReceiptId,
       company,
       fileName: pdf.fileName,
       signature: signatureDataUrl,
@@ -573,7 +699,7 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         ...data,
         fileName: pdf.fileName,
-        receiptNumber: receiptId,
+        receiptNumber: finalReceiptId,
         pdfBase64: pdf.pdfBase64,
         signature: signatureDataUrl,
         company,
@@ -592,6 +718,7 @@ form.addEventListener("submit", async (event) => {
     }
     closeLoadingModal();
     openSuccessModal();
+    invalidatePdfCache();
     if (pdfPreviewUrl) {
       URL.revokeObjectURL(pdfPreviewUrl);
       pdfPreviewUrl = null;
@@ -610,3 +737,4 @@ loadPdfFont().catch((error) => console.warn(error));
 form.querySelector('input[name="paymentDate"]').value = todayString();
 form.querySelector('input[name="paymentNote"]').value = "訂車訂金";
 updateSummary();
+schedulePdfWarmup();
