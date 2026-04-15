@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: car-loan-contract
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start

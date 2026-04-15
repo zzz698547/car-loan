@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>訂車合約簽署</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.plugin.autotable.min.js" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <img src="./jiangyu-transparent.png" alt="御線上理財平臺 Logo" class="brand-logo" />
+        <div class="brand-copy">
+          <span>御線上理財平臺</span>
+          <strong>Jiang Yu Finance</strong>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero__eyebrow">線上簽署</div>
+        <h1>訂車合約</h1>
+        <p>
+          御線上理財平臺的訂車合約頁面，包含新台幣 5,000 元訂金、付款資訊、訂金收據、電子簽名與自動寄信。
+        </p>
+      </section>
+
+      <section class="contract-shell">
+        <form class="contract-card" id="contractForm">
+          <section class="company-banner">
+            <div>
+              <span>簽約單位</span>
+              <strong>御線上理財平臺</strong>
+            </div>
+            <div>
+              <span>地址</span>
+              <strong>台中市北區興進路218巷5號</strong>
+            </div>
+          </section>
+
+          <div class="grid">
+            <label>
+              <span>訂購人姓名</span>
+              <input type="text" name="customerName" placeholder="例如：王小明" required />
+            </label>
+            <label>
+              <span>聯絡電話</span>
+              <input type="tel" name="phone" placeholder="例如：09xx-xxx-xxx" required />
+            </label>
+            <label>
+              <span>身分證字號 / 統編</span>
+              <input type="text" name="idNumber" placeholder="選填" />
+            </label>
+            <label>
+              <span>預定交車日期</span>
+              <input type="date" name="deliveryDate" required />
+            </label>
+            <label>
+              <span>收件 Gmail / Email</span>
+              <input type="email" name="email" placeholder="例如：name@gmail.com" required />
+            </label>
+          </div>
+
+          <div class="money-box">
+            <div>
+              <span>訂金金額</span>
+              <strong>NT$ 5,000</strong>
+            </div>
+            <p>訂金於簽署後收取，作為配車與保留名額之用；實際車輛資訊將於配車後另行確認。</p>
+          </div>
+
+          <section class="payment-section">
+            <h2>付款資訊</h2>
+            <div class="grid">
+              <label>
+                <span>付款方式</span>
+                <select name="paymentMethod" required>
+                  <option value="銀行轉帳">銀行轉帳</option>
+                  <option value="現金">現金</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <label>
+                <span>收款帳號 / 後五碼</span>
+                <input type="text" name="accountNumber" placeholder="待填" />
+              </label>
+              <label>
+                <span>銀行名稱</span>
+                <input type="text" name="bankName" placeholder="待填" />
+              </label>
+              <label>
+                <span>戶名</span>
+                <input type="text" name="accountName" placeholder="待填" />
+              </label>
+              <label>
+                <span>付款日期</span>
+                <input type="date" name="paymentDate" />
+              </label>
+              <label>
+                <span>付款備註</span>
+                <input type="text" name="paymentNote" placeholder="例如：訂車訂金" />
+              </label>
+            </div>
+          </section>
+
+          <section class="terms">
+            <h2>合約條例</h2>
+            <ol>
+              <li>訂購人同意以新台幣 5,000 元作為本次訂車訂金。</li>
+              <li>訂金支付後，賣方依訂購需求安排配車，實際車輛資訊以配車後確認資料為準。</li>
+              <li>如訂購人無故取消訂車，訂金原則上不予退還。</li>
+              <li>如賣方無法依約完成配車或交付車輛，訂購人得請求全額退還訂金。</li>
+              <li>
+                交車日期如因不可抗力、原廠配車、法規變動或不可歸責於雙方之事由延後，雙方得協議調整。
+              </li>
+              <li>車輛規格、顏色、配備與交車內容，於配車完成後另行確認並以雙方確認資料為準。</li>
+              <li>訂購人應提供正確聯絡資料，以便通知交車及相關文件事宜。</li>
+              <li>本頁為簡易電子簽署範本，正式法律效力建議再由雙方確認或由律師審閱。</li>
+            </ol>
+          </section>
+
+          <section class="ack">
+            <label class="checkline">
+              <input type="checkbox" name="agreeTerms" required />
+              <span>我已閱讀並同意以上條例，並同意以電子方式完成簽署。</span>
+            </label>
+          </section>
+
+          <section class="signature">
+            <div class="signature__header">
+              <h2>簽名區</h2>
+              <div class="signature__tools">
+                <button type="button" class="ghost-btn" id="previewPdfBtn">預覽 PDF</button>
+                <button type="button" class="ghost-btn" id="clearSignature">清除簽名</button>
+              </div>
+            </div>
+            <p class="signature__hint">點一下即可開啟全螢幕簽名板，手機更好簽。</p>
+            <button type="button" class="signature-pad" id="openSignaturePad" aria-label="開啟全螢幕簽名板">
+              <span class="signature-pad__label">點一下全螢幕簽名</span>
+              <canvas id="signaturePreview" aria-hidden="true"></canvas>
+            </button>
+          </section>
+
+          <div class="actions">
+            <button type="submit" class="primary-btn">送出並寄出合約</button>
+          </div>
+        </form>
+
+        <aside class="summary-card">
+          <h2>簽署摘要</h2>
+          <div class="summary-list">
+            <div>
+              <span>訂金</span>
+              <strong>NT$ 5,000</strong>
+            </div>
+            <div>
+              <span>形式</span>
+              <strong>線上電子簽名</strong>
+            </div>
+            <div>
+              <span>用途</span>
+              <strong>訂車保留</strong>
+            </div>
+            <div>
+              <span>公司</span>
+              <strong>御線上理財平臺</strong>
+            </div>
+          </div>
+          <p id="summaryNote">填寫表單後，這裡會顯示公司名稱、車款、交車資訊與收件 Email。送出時會直接寄到指定信箱。</p>
+        </aside>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="signature-modal" id="signatureModal" aria-hidden="true">
+      <div class="signature-modal__sheet" role="dialog" aria-modal="true" aria-label="全螢幕簽名板">
+        <div class="signature-modal__header">
+          <div>
+            <strong>全螢幕簽名</strong>
+            <span>請用手指或滑鼠在下方簽名</span>
+          </div>
+          <button type="button" class="ghost-btn" id="closeSignaturePad">關閉</button>
+        </div>
+        <canvas id="signaturePad" aria-label="電子簽名板"></canvas>
+        <div class="signature-modal__actions">
+          <button type="button" class="secondary-btn" id="clearModalSignature">清除</button>
+          <button type="button" class="secondary-btn" id="cancelModalSignature">取消</button>
+          <button type="button" class="primary-btn" id="saveModalSignature">完成簽名</button>
+        </div>
+      </div>
+    </div>
+    <div class="pdf-modal" id="pdfModal" aria-hidden="true">
+      <div class="pdf-modal__sheet" role="dialog" aria-modal="true" aria-label="PDF 預覽">
+        <div class="pdf-modal__header">
+          <div>
+            <strong>PDF 預覽</strong>
+            <span>你可以先確認排版、Logo、條例與簽名位置</span>
+          </div>
+          <button type="button" class="ghost-btn" id="closePdfPreview">關閉</button>
+        </div>
+        <iframe id="pdfPreviewFrame" title="PDF 預覽" class="pdf-modal__frame"></iframe>
+      </div>
+    </div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
