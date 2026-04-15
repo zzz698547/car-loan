@@ -15,6 +15,7 @@ const closePdfPreviewBtn = document.getElementById("closePdfPreview");
 const successModal = document.getElementById("successModal");
 const closeSuccessModalBtn = document.getElementById("closeSuccessModal");
 const loadingModal = document.getElementById("loadingModal");
+const loadingStatus = document.getElementById("loadingStatus");
 const toast = document.getElementById("toast");
 const summaryNote = document.getElementById("summaryNote");
 
@@ -35,6 +36,7 @@ let pdfPreviewUrl = null;
 let pdfFontBase64 = null;
 let pdfFontLoadingPromise = null;
 let isSubmitting = false;
+let successCloseTimer = null;
 
 function getJsPDF() {
   return window.jspdf?.jsPDF;
@@ -374,12 +376,17 @@ function closePdfPreview() {
 }
 
 function openSuccessModal() {
+  window.clearTimeout(successCloseTimer);
   successModal.classList.add("is-open");
   successModal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
+  successCloseTimer = window.setTimeout(() => {
+    closeSuccessModal();
+  }, 3000);
 }
 
 function closeSuccessModal() {
+  window.clearTimeout(successCloseTimer);
   successModal.classList.remove("is-open");
   successModal.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
@@ -388,6 +395,9 @@ function closeSuccessModal() {
 function openLoadingModal() {
   loadingModal.classList.add("is-open");
   loadingModal.setAttribute("aria-hidden", "false");
+  if (loadingStatus) {
+    loadingStatus.textContent = "請稍候，系統正在產生 PDF 並寄出簽約資料。";
+  }
   document.body.style.overflow = "hidden";
 }
 
@@ -405,6 +415,12 @@ function setSubmittingState(submitting) {
   submitButton.disabled = submitting;
   submitButton.dataset.originalLabel ||= submitButton.textContent.trim();
   submitButton.textContent = submitting ? "送出中..." : submitButton.dataset.originalLabel;
+}
+
+function setLoadingStep(step) {
+  if (loadingStatus) {
+    loadingStatus.textContent = step;
+  }
 }
 
 function base64ToBlob(base64, contentType) {
@@ -533,7 +549,9 @@ form.addEventListener("submit", async (event) => {
   openLoadingModal();
 
   try {
+    setLoadingStep("PDF 產生中，請稍候...");
     const pdf = await createPdfPackage(receiptId);
+    setLoadingStep("資料寄送中，請稍候...");
     const payload = {
       ...data,
       deposit: `NT$ ${depositAmount.toLocaleString("zh-TW")}`,
