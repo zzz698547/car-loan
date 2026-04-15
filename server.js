@@ -100,6 +100,46 @@ function createTransport() {
   });
 }
 
+function buildContractText(body) {
+  return [
+    "您好，",
+    "",
+    "附件為訂車合約與訂金收據 PDF。",
+    `訂購人：${body.customerName}`,
+    `聯絡電話：${body.phone}`,
+    `出生年月日：${body.birthDate || "未填寫"}`,
+    `身分證 / 統編：${body.idNumber || "未填寫"}`,
+    `付款方式：${body.paymentMethod || "未填寫"}`,
+    `訂金：${body.deposit || "NT$ 5,000"}`,
+    `收據編號：${body.receiptNumber || "未填寫"}`,
+    "",
+    "如需更正資料，請直接回覆此信。",
+  ].join("\n");
+}
+
+async function sendTelegramContract(body, pdfBuffer) {
+  const token = requireEnv("TELEGRAM_BOT_TOKEN");
+  const chatId = requireEnv("TELEGRAM_CHAT_ID");
+  const caption = buildContractText(body);
+  const url = `https://api.telegram.org/bot${token}/sendDocument`;
+
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  form.append("caption", caption);
+  form.append("disable_notification", "false");
+  form.append("document", new Blob([pdfBuffer], { type: "application/pdf" }), body.fileName);
+
+  const response = await fetch(url, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Telegram 寄送失敗${text ? `：${text}` : ""}`);
+  }
+}
+
 async function handleSendContract(req, res) {
   const body = await parseJsonBody(req);
   const required = ["customerName", "phone", "pdfBase64", "fileName"];
@@ -113,29 +153,36 @@ async function handleSendContract(req, res) {
   const from = requireEnv("SMTP_USER");
   const transport = createTransport();
   const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
+  const mailText = buildContractText(body);
 
-  await transport.sendMail({
-    from: `將御線上理財平臺 <${from}>`,
-    to: recipient,
-    subject: `訂車合約與訂金收據 - ${body.customerName}`,
-    text: [
-      "您好，",
-      "",
-      "附件為訂車合約與訂金收據 PDF。",
-      `訂購人：${body.customerName}`,
-      `聯絡電話：${body.phone}`,
-      `訂金：NT$ 5,000`,
-      "",
-      "如需更正資料，請直接回覆此信。",
-    ].join("\n"),
-    attachments: [
-      {
-        filename: body.fileName,
-        content: pdfBuffer,
-        contentType: "application/pdf",
-      },
-    ],
-  });
+  const [mailResult, telegramResult] = await Promise.allSettled([
+    transport.sendMail({
+      from: `將御線上理財平臺 <${from}>`,
+      to: recipient,
+      subject: `訂車合約與訂金收據 - ${body.customerName}`,
+      text: mailText,
+      attachments: [
+        {
+          filename: body.fileName,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    }),
+    sendTelegramContract(body, pdfBuffer),
+  ]);
+
+  const failures = [];
+  if (mailResult.status === "rejected") {
+    failures.push(`Gmail：${mailResult.reason?.message || mailResult.reason || "寄送失敗"}`);
+  }
+  if (telegramResult.status === "rejected") {
+    failures.push(`Telegram：${telegramResult.reason?.message || telegramResult.reason || "寄送失敗"}`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(failures.join("；"));
+  }
 
   sendJson(res, 200, { ok: true });
 }
