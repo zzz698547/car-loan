@@ -14,6 +14,7 @@ const pdfPreviewFrame = document.getElementById("pdfPreviewFrame");
 const closePdfPreviewBtn = document.getElementById("closePdfPreview");
 const successModal = document.getElementById("successModal");
 const closeSuccessModalBtn = document.getElementById("closeSuccessModal");
+const loadingModal = document.getElementById("loadingModal");
 const toast = document.getElementById("toast");
 const summaryNote = document.getElementById("summaryNote");
 
@@ -33,6 +34,7 @@ let signatureDataUrl = null;
 let pdfPreviewUrl = null;
 let pdfFontBase64 = null;
 let pdfFontLoadingPromise = null;
+let isSubmitting = false;
 
 function getJsPDF() {
   return window.jspdf?.jsPDF;
@@ -383,6 +385,28 @@ function closeSuccessModal() {
   document.body.style.overflow = "";
 }
 
+function openLoadingModal() {
+  loadingModal.classList.add("is-open");
+  loadingModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeLoadingModal() {
+  loadingModal.classList.remove("is-open");
+  loadingModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
+function setSubmittingState(submitting) {
+  isSubmitting = submitting;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (!submitButton) return;
+
+  submitButton.disabled = submitting;
+  submitButton.dataset.originalLabel ||= submitButton.textContent.trim();
+  submitButton.textContent = submitting ? "送出中..." : submitButton.dataset.originalLabel;
+}
+
 function base64ToBlob(base64, contentType) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -455,6 +479,11 @@ pdfModal.addEventListener("click", (event) => {
 
 closePdfPreviewBtn.addEventListener("click", closePdfPreview);
 closeSuccessModalBtn.addEventListener("click", closeSuccessModal);
+loadingModal.addEventListener("click", (event) => {
+  if (event.target === loadingModal) {
+    event.preventDefault();
+  }
+});
 
 window.addEventListener("resize", () => {
   syncPreview();
@@ -477,6 +506,11 @@ form.addEventListener("input", updateSummary);
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+
+  if (isSubmitting) {
+    return;
+  }
+
   const data = readFormData();
 
   if (!data.customerName || !data.phone) {
@@ -495,6 +529,8 @@ form.addEventListener("submit", async (event) => {
   }
 
   const receiptId = receiptNumber();
+  setSubmittingState(true);
+  openLoadingModal();
 
   try {
     const pdf = await createPdfPackage(receiptId);
@@ -534,14 +570,18 @@ form.addEventListener("submit", async (event) => {
     if (pdfModal.classList.contains("is-open")) {
       closePdfPreview();
     }
+    closeLoadingModal();
     openSuccessModal();
     if (pdfPreviewUrl) {
       URL.revokeObjectURL(pdfPreviewUrl);
       pdfPreviewUrl = null;
     }
   } catch (error) {
+    closeLoadingModal();
     console.error(error);
     showToast(error.message || "寄信失敗，請稍後再試");
+  } finally {
+    setSubmittingState(false);
   }
 });
 
